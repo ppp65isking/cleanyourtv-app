@@ -28,10 +28,14 @@ import java.security.spec.PKCS8EncodedKeySpec
 import java.security.spec.RSAPublicKeySpec
 
 // The phone's ADB identity (SECURITY 4.1, spike S2). In order: an RSA-2048 Keystore key in
-// StrongBox, the same in the TEE, and a software key sealed by SecretBox. Every path signs only
-// DigestInfo(SHA-1) || a 20-byte token through NONEwithRSA (PKCS#1 v1.5), so there is no general
-// signing oracle: the Keystore key has PURPOSE_SIGN alone, DIGEST_NONE and PKCS1 padding, and the
-// raw RSA cipher path of the spike is not used. A path is used only after its self-test passes.
+// StrongBox, the same in the TEE, and a software key sealed by SecretBox. The ADB auth-token path
+// signs only DigestInfo(SHA-1) || a 20-byte token through NONEwithRSA (PKCS#1 v1.5), so there is
+// no general signing oracle on that path. The same key is also the TLS identity for pairing and
+// STLS, and adbd's pairing server needs it to sign the TLS 1.3 CertificateVerify with a
+// hash-based scheme (rsa_pkcs1_sha256 / rsa_pss_rsae_sha256), so the Keystore key is authorized
+// for DIGEST_SHA256/SHA384/SHA512 with PKCS#1 v1.5 and PSS paddings alongside DIGEST_NONE —
+// a StrongBox key provisioned with DIGEST_NONE alone refuses the handshake and pairing fails
+// as TLS_FAILED. The TLS stack only ever signs the handshake transcript with it.
 class KeystoreAdbSigner private constructor(
     private val context: Context,
     @Volatile private var engine: Engine,
@@ -41,16 +45,26 @@ class KeystoreAdbSigner private constructor(
         val publicKey: RSAPublicKey
         val backing: KeyBacking
         fun sign(token: AuthToken): ByteArray
+        // The same RSA key, as a TLS identity: pairing and STLS present it, and adbd stores
+        // the public key from the certificate.
+        fun tlsIdentity(): TlsIdentity
     }
 
     private class KeystoreEngine(private val privateKey: PrivateKey, override val publicKey: RSAPublicKey, override val backing: KeyBacking) : Engine {
         override fun sign(token: AuthToken): ByteArray = AdbSignature.sign(privateKey, token, PROVIDER)
+        override fun tlsIdentity(): TlsIdentity {
+            val ks = KeyStore.getInstance(PROVIDER).apply { load(null) }
+            val cert = ks.getCertificate(ALIAS) as? java.security.cert.X509Certificate
+                ?: throw IllegalStateException("Keystore certificate is missing for $ALIAS")
+            return TlsIdentity(privateKey, arrayOf(cert))
+        }
     }
 
     private class SoftwareEngine(private val keyPair: KeyPair) : Engine {
         override val publicKey: RSAPublicKey get() = keyPair.public as RSAPublicKey
         override val backing: KeyBacking get() = KeyBacking.WRAPPED_SOFTWARE
         override fun sign(token: AuthToken): ByteArray = AdbSignature.sign(keyPair.private, token)
+        override fun tlsIdentity(): TlsIdentity = TlsIdentity(keyPair.private, arrayOf(SelfSignedCert.forKey(keyPair)))
     }
 
     private val mutex = Mutex()
@@ -61,6 +75,11 @@ class KeystoreAdbSigner private constructor(
 
     // Why the Keystore paths were skipped, for the key details screen; empty when StrongBox won.
     val provisioningNotes: List<String> get() = readNotes(context)
+
+    // The TLS identity for pairing and STLS: the phone's ADB key with a certificate. Signing
+    // still goes through the AdbSigner path; this only exposes the key object for the TLS
+    // stack, which delegates signing to the Keystore and never exports the key.
+    suspend fun tlsIdentity(): TlsIdentity = withContext(Dispatchers.IO) { engine.tlsIdentity() }
 
     override suspend fun sign(token: AuthToken): ByteArray = withContext(Dispatchers.IO) {
         require(token.bytes.size == AdbProtocol.TOKEN_BYTES) { "adb tokens are 20 bytes" }
@@ -76,7 +95,9 @@ class KeystoreAdbSigner private constructor(
     }
 
     companion object {
-        const val ALIAS = "cleanyourtv.adb.rsa.v1"
+        const val ALIAS = "cleanyourtv.adb.rsa.v2"
+        // The alias before the TLS-signing fix; only deleted, never loaded.
+        private const val LEGACY_ALIAS_V1 = "cleanyourtv.adb.rsa.v1"
         private const val PROVIDER = "AndroidKeyStore"
         private const val BACKING_FILE = "adbkey.backing"
         private const val SEALED_FILE = "adbkey.p8.sealed"
@@ -132,8 +153,8 @@ class KeystoreAdbSigner private constructor(
                     val kpg = KeyPairGenerator.getInstance(KeyProperties.KEY_ALGORITHM_RSA, PROVIDER)
                     val spec = KeyGenParameterSpec.Builder(ALIAS, KeyProperties.PURPOSE_SIGN)
                         .setKeySize(AdbPublicKeyCodec.KEY_BITS)
-                        .setDigests(KeyProperties.DIGEST_NONE)
-                        .setSignaturePaddings(KeyProperties.SIGNATURE_PADDING_RSA_PKCS1)
+                        .setDigests(KeyProperties.DIGEST_NONE, KeyProperties.DIGEST_SHA256, KeyProperties.DIGEST_SHA384, KeyProperties.DIGEST_SHA512)
+                        .setSignaturePaddings(KeyProperties.SIGNATURE_PADDING_RSA_PKCS1, KeyProperties.SIGNATURE_PADDING_RSA_PSS)
                         .setUserAuthenticationRequired(false)
                     if (strongBox) spec.setIsStrongBoxBacked(true)
                     kpg.initialize(spec.build())
@@ -180,6 +201,9 @@ class KeystoreAdbSigner private constructor(
         private fun deleteAll(context: Context) {
             val ks = keyStore()
             if (ks.containsAlias(ALIAS)) ks.deleteEntry(ALIAS)
+            // The v1 key was provisioned without TLS signing authorizations; the v2 alias
+            // replaces it, so drop the orphaned entry rather than leaving it in the Keystore.
+            if (ks.containsAlias(LEGACY_ALIAS_V1)) ks.deleteEntry(LEGACY_ALIAS_V1)
             runCatching { SecretBox().delete() }
             File(dir(context), SEALED_FILE).delete()
             File(dir(context), BACKING_FILE).delete()

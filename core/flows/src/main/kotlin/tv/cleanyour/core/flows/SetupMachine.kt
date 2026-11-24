@@ -273,6 +273,9 @@ class SetupDeps(
     val homeHelper: Boolean = tv.cleanyour.core.planner.HomeHelper.BUILD_ON,
     // 0.4.8: where the restarts are counted (Restarts); the app gives Manage the same one. Null counts none.
     val restarts: Restarts? = documents?.let { Restarts(it) },
+    // 0.2: in-app ADB pairing (AdbPairingTls); null keeps the PairingNeeded screen on the
+    // computer steps only.
+    val pairing: PairingRunner? = null,
 )
 
 // The first-run wizard, screens S1 to S5 (PRODUCT-SPEC 4, UX 2 and 4). One machine per wizard run,
@@ -337,6 +340,10 @@ class SetupMachine(
     private var reconnectJob: Job? = null
     private var restartJob: Job? = null
     private var draftJob: Job? = null
+    private var pairJob: Job? = null   // 0.2: the in-app pairing attempt, if one is running
+    private val pairedHosts = HashSet<String>()   // 0.2: hosts this run paired, so the door
+    // does not send them back to PairingNeeded on the stale discovery record that still lists
+    // the pairing service
 
     private sealed interface Ev {
         data class Disc(val event: DiscoveryEvent) : Ev
@@ -358,6 +365,7 @@ class SetupMachine(
         data object ToWelcome : Ev
         data object Back : Ev
         data class CandidateChosen(val tryIt: Boolean) : Ev
+        data class PairingDone(val outcome: PairingOutcome) : Ev   // 0.2: the in-app pairing attempt finished
     }
 
     init {
@@ -414,6 +422,14 @@ class SetupMachine(
         }
         is SetupIntent.EnterAddress -> if (isHomeAddress(event.ip) && (state is SetupState.Welcome || state is SetupState.Picker || state is SetupState.OpenDoor || state is SetupState.PairingNeeded))
             door(manualTv(event.ip.trim())) else state
+        // 0.2: a 6-digit code starts the in-app pairing; anything else is ignored, and a run
+        // already in flight is not doubled.
+        is SetupIntent.PairWithCode -> if (state is SetupState.PairingNeeded && state.phase != PairingPhase.RUNNING && deps.pairing != null && event.code.length == 6 && event.code.all { it.isDigit() })
+            state.copy(phase = PairingPhase.RUNNING, error = null) else state
+        is Ev.PairingDone -> if (state is SetupState.PairingNeeded) when (val o = event.outcome) {
+            is PairingOutcome.Paired -> state.copy(phase = PairingPhase.PAIRED, guid = o.guid)
+            is PairingOutcome.Failed -> state.copy(phase = PairingPhase.FAILED, error = o.failure)
+        } else state
         // A family name as it is, a brand chip through Families.ofBrand. The TCL chip asks about the
         // menus first (TCL_ASK, no banner); the answer comes back as TCL_GLOBAL or TCL, and only
         // TCL (China-market firmware) gets the banner about the home screen.
@@ -466,7 +482,7 @@ class SetupMachine(
     }
 
     private fun door(tv: FoundTv): SetupState {
-        val pairingOnly = (tv.pairingService != null || tv.connectService != null) && tv.port5555Open != true
+        val pairingOnly = (tv.pairingService != null || tv.connectService != null) && tv.port5555Open != true && tv.host !in pairedHosts
         if (pairingOnly) return SetupState.PairingNeeded(tv)
         val family = Families.of(tv)
         val open = tv.port5555Open == true
@@ -487,9 +503,29 @@ class SetupMachine(
         // A new door (another TV, a typed address, a fresh start) clears the retry brakes.
         if (event is Ev.Door || event == SetupIntent.Start || event is SetupIntent.PickTv || event is SetupIntent.EnterAddress || event == Ev.Back || event == Ev.ToWelcome) {
             blocked = false; connectFailed = false
+            pairJob?.cancel(); pairJob = null
             mutableExtras.update { it.copy(connectError = null) }
         }
         when (event) {
+            is SetupIntent.PairWithCode -> if (after is SetupState.PairingNeeded && after.phase == PairingPhase.RUNNING) {
+                pairJob?.cancel()
+                pairJob = scope.launch {
+                    val outcome = deps.pairing?.pair(after.tv, event.code)
+                        ?: PairingOutcome.Failed(PairingFailure.UNKNOWN)
+                    send(Ev.PairingDone(outcome))
+                }
+            }
+            is Ev.PairingDone -> if (event.outcome is PairingOutcome.Paired) {
+                val tv = (after as? SetupState.PairingNeeded)?.tv
+                if (tv != null) {
+                    pairedHosts += tv.host
+                    // The TV's connect service is the way in now: go through the door again,
+                    // which opens the TLS endpoint instead of 5555. Without one, the screen
+                    // keeps the success and the person goes back to the list; discovery will
+                    // show the TV with its connect service once it advertises it.
+                    if (tv.connectService != null) send(Ev.Door(tv))
+                }
+            }
             is SetupIntent.EnterAddress -> {
                 // A typed address is the person's own choice, even one they said No to before.
                 if (isHomeAddress(event.ip)) rejected -= event.ip.trim()
@@ -675,8 +711,14 @@ class SetupMachine(
         doorTv = found
         knownTv = known
         deps.log.line("setup: connect start (${if (known != null) "known TV" else "new TV"}, ${found.sources.joinToString("+") { it.name.lowercase() }.ifEmpty { "found" }})")
+        // 0.2: a TV whose wireless debugging is on and 5555 is closed is reached over its TLS
+        // connect service (paired first); a plain 5555 TV keeps the old endpoint.
+        val connectService = found.connectService
+        val endpoint = if (connectService != null && found.port5555Open != true)
+            Endpoint.Tls(found.host, connectService.port, connectService.name)
+        else Endpoint.PlainTcp(found.host)
         val result = attempt {
-            deps.sessions.open(Endpoint.PlainTcp(found.host), known?.id) { fp -> allowShown = true; send(Ev.Allow(fp)) }
+            deps.sessions.open(endpoint, known?.id) { fp -> allowShown = true; send(Ev.Allow(fp)) }
         }.getOrElse { e ->
             // Issues #325, #620: an exception the session did not type was logged as "unreachable",
             // the one word that sends the person to look at the phone's network. It is named for what

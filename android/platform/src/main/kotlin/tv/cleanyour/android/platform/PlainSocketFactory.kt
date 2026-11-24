@@ -13,20 +13,24 @@ import java.net.InetSocketAddress
 import java.net.Socket
 import java.net.UnknownHostException
 
-// Plain TCP to port 5555 (D9). The host must be a literal IP address: no name resolution, so the
-// address the user confirmed is the address we connect to. SO_KEEPALIVE and TCP_NODELAY as
-// ARCHITECTURE 3.10; the real liveness check is the session's ping.
+// Plain TCP to the ADB port (5555) or the TV's wireless-debugging TLS port (D9). The host
+// must be a literal IP address: no name resolution, so the address the user confirmed is the
+// address we connect to. A Tls endpoint connects as plain TCP here; the TLS upgrade happens
+// in the handshake through the TlsUpgrader the session was built with, so a TV that only
+// offers wireless debugging can be reached after it has been paired. SO_KEEPALIVE and
+// TCP_NODELAY as ARCHITECTURE 3.10; the real liveness check is the session's ping.
 class PlainSocketFactory : SocketFactory {
     override suspend fun connect(endpoint: Endpoint, timeoutMs: Long): AdbSocket {
-        if (endpoint !is Endpoint.PlainTcp) throw AdbException(AdbError.Transport.Protocol("TLS endpoints are not supported in this version"))
-        if (!isLiteralAddress(endpoint.host)) throw UnknownHostException("host must be an IP address")
+        if (endpoint !is Endpoint.PlainTcp && endpoint !is Endpoint.Tls) throw AdbException(AdbError.Transport.Protocol("unsupported endpoint $endpoint"))
+        val (host, port) = endpoint.host to endpoint.port
+        if (!isLiteralAddress(host)) throw UnknownHostException("host must be an IP address")
         return withContext(Dispatchers.IO) {
             val socket = Socket()
             try {
                 socket.tcpNoDelay = true
                 socket.keepAlive = true
-                socket.connect(InetSocketAddress(endpoint.host, endpoint.port), timeoutMs.toInt())
-                TcpAdbSocket(socket)
+                socket.connect(InetSocketAddress(host, port), timeoutMs.toInt())
+                TcpAdbSocket(socket, host, port)
             } catch (e: Exception) {
                 runCatching { socket.close() }
                 throw e
@@ -42,7 +46,9 @@ class PlainSocketFactory : SocketFactory {
 }
 
 // Blocking socket I/O on Dispatchers.IO; close() from any thread unblocks a pending read.
-class TcpAdbSocket(private val socket: Socket) : AdbSocket {
+// The raw socket, host and port are exposed for the TLS upgrader: the STLS handshake wraps
+// this socket in place, so the upgrader needs the underlying java.net.Socket, not a copy.
+class TcpAdbSocket internal constructor(internal val socket: Socket, val host: String = "", val port: Int = 0) : AdbSocket {
     private val input = socket.getInputStream()
     private val output = socket.getOutputStream()
 

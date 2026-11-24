@@ -48,6 +48,7 @@ dependencies {
     implementation(project(":android:work"))
     implementation(project(":android:platform"))
     implementation(project(":adb:session"))
+    implementation(project(":adb:pairing"))   // 0.2: in-app pairing (AppPairingRunner)
     // T7: the real implementations behind Seams (layer 9 may use every lower layer).
     implementation(project(":adb:wire"))
     implementation(project(":core:ops"))

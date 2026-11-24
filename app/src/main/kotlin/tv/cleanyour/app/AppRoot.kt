@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -79,6 +80,7 @@ import tv.cleanyour.feature.manage.SwitchedOffScreen
 import tv.cleanyour.feature.manage.TvSettingsScreen
 import tv.cleanyour.feature.modules.ModulesFlow
 import tv.cleanyour.feature.setup.SetupFlow
+import tv.cleanyour.ui.design.component.LocalGeminiOnTv
 
 // Navigation 3 keys (ARCHITECTURE 2.2): serializable, ids only, never payloads, so the back stack
 // itself survives process death and every screen rebuilds its state from disk.
@@ -267,6 +269,10 @@ fun AppRoot(graph: AppGraph, start: Dest, onExit: () -> Unit) {
         }
     }
 
+    // The Gemini button fires Gemini on the connected TV first (KEYCODE_ASSIST, the remote's
+    // Assistant button); with no TV connected the button falls back to the phone launcher.
+    // Provided once here so every screen's top bar gets it.
+    CompositionLocalProvider(LocalGeminiOnTv provides { openGeminiOnTv(graph.sessions) }) {
     Box(Modifier.fillMaxSize()) {
         NavDisplay(
             backStack = backStack,
@@ -394,6 +400,7 @@ fun AppRoot(graph: AppGraph, start: Dest, onExit: () -> Unit) {
             // 0.4.8: "Enter the TV's address" on the step: the wait tries the typed address with the known-TV rules.
             onAddress = { text -> reach.tvIdOrNull()?.let { graph.access.tryAddress(it, text) } ?: false })
         SnackbarHost(snack, Modifier.align(Alignment.BottomCenter).padding(16.dp))
+    }
     }
 }
 

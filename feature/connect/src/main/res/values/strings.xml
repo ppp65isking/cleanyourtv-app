@@ -151,7 +151,17 @@
 
     <!-- S2x Pairing needed (D9). The three commands are code and are not translated. -->
     <string name="pairing_title">This TV needs a pairing code</string>
-    <string name="pairing_body">This version can\'t type pairing codes yet; the next one will. If you have a computer, pair once with adb and run adb tcpip 5555, then come back; the phone takes it from there.</string>
+    <string name="pairing_body">On the TV, open Developer options > Wireless debugging > Pair device with pairing code. Type the six-digit code the TV shows — the phone pairs with the TV itself, no computer needed.</string>
+    <string name="pairing_code_label">Pairing code</string>
+    <string name="pairing_code_hint">The six digits the TV is showing</string>
+    <string name="pairing_pair">Pair this TV</string>
+    <string name="pairing_waiting">Pairing with the TV…</string>
+    <string name="pairing_paired_body">This phone is paired with the TV. If wireless debugging is on, the setup carries on by itself; if not, go back — the TV will show up again once it is on.</string>
+    <string name="pairing_wrong_code">That code didn\'t work. Check the six digits on the TV and try again.</string>
+    <string name="pairing_unreachable">Couldn\'t reach the TV. Check the TV is on and on the same Wi-Fi.</string>
+    <string name="pairing_tls_failed">The TV didn\'t answer the pairing as expected. Try again, or use the computer steps below.</string>
+    <string name="pairing_timeout">Pairing timed out. Check the TV is still showing the code and try again.</string>
+    <string name="pairing_unknown">Pairing didn\'t work. Try again, or use the computer steps below.</string>
     <string name="pairing_show_steps">Show me the computer steps</string>
     <string name="pairing_steps_title">Pair once from a computer</string>
     <string name="pairing_steps_intro">On the TV, open Developer options > Wireless debugging > Pair device with pairing code. Then run these three commands on the computer, one at a time.</string>

@@ -46,7 +46,11 @@ import tv.cleanyour.core.flows.SetupState
 import tv.cleanyour.core.flows.Sheet
 import tv.cleanyour.core.flows.StopAction
 import tv.cleanyour.core.flows.StopCase
+import tv.cleanyour.core.flows.PairingFailure
+import tv.cleanyour.core.flows.PairingPhase
 import tv.cleanyour.core.flows.fingerprintTail
+import tv.cleanyour.ui.design.component.CytTextField
+import androidx.compose.ui.text.input.KeyboardType
 import tv.cleanyour.ui.design.component.ActionColumn
 import tv.cleanyour.ui.design.component.AddressEntry
 import tv.cleanyour.ui.design.component.AdbAllowMirror
@@ -439,23 +443,53 @@ internal fun NotSeenContent(retries: Int, onAsk: () -> Unit) {
     }
 }
 
-// S2x: the 0.1 dead end for pairing-only TVs (D9).
+// S2x: the TV only offers wireless debugging, so it needs a pairing code. The code the TV
+// shows goes in here and the phone pairs itself (0.2); the computer steps stay as the fallback.
 @Composable
 fun PairingScreen(state: SetupState.PairingNeeded, extras: SetupExtras, actions: SetupActions, modifier: Modifier = Modifier) {
     var steps by rememberSaveable { mutableStateOf(false) }
+    var code by rememberSaveable { mutableStateOf("") }
+    val running = state.phase == PairingPhase.RUNNING
+    val paired = state.phase == PairingPhase.PAIRED
     ScreenScaffold(Glow.Tv, modifier, topBar = { CytTopBar(onBack = { actions.back() }) }) {
-        // "Show me" opens a sheet, "Back" goes back: neither acts on the TV, so neither is guarded.
-        // 0.4.6: "Report a problem" opens the GitHub form with how the TV was found (no TV read yet).
-        val title = stringResource(R.string.pairing_title)
-        StopCard(
-            title, stringResource(R.string.pairing_body), Modifier.padding(top = 20.dp),
-            primaryLabel = stringResource(R.string.pairing_show_steps), onPrimary = { steps = true },
-            secondaryLabel = stringResource(R.string.action_back), onSecondary = { actions.back() },
-            detailsLabel = stringResource(R.string.connect_report), onDetails = { actions.report(title) },
-            primaryGuarded = false,
-        )
+        ScreenTitle(stringResource(R.string.pairing_title), Modifier.padding(top = 8.dp))
+        when {
+            paired -> {
+                Lead(stringResource(R.string.pairing_paired_body), Modifier.padding(top = 12.dp))
+                PrimaryButton(stringResource(R.string.action_back), { actions.back() }, Modifier.padding(top = 24.dp))
+            }
+            else -> {
+                Lead(stringResource(R.string.pairing_body), Modifier.padding(top = 12.dp))
+                CytTextField(
+                    value = code,
+                    onValueChange = { code = it.filter { ch -> ch.isDigit() }.take(6) },
+                    label = stringResource(R.string.pairing_code_label),
+                    modifier = Modifier.padding(top = 20.dp),
+                    error = state.error?.let { stringResource(pairingErrorString(it)) },
+                    supporting = stringResource(R.string.pairing_code_hint),
+                    keyboardType = KeyboardType.Number,
+                )
+                PrimaryButton(
+                    stringResource(R.string.pairing_pair),
+                    { actions.intent(SetupIntent.PairWithCode(code)) },
+                    Modifier.padding(top = 20.dp),
+                    enabled = code.length == 6 && !running,
+                    loading = running,
+                )
+                if (running) StatusLine(stringResource(R.string.pairing_waiting), Modifier.padding(top = 20.dp))
+                SecondaryButton(stringResource(R.string.pairing_show_steps), { steps = true }, Modifier.padding(top = 12.dp))
+            }
+        }
     }
     if (steps) CytBottomSheet({ steps = false }) { PairingStepsContent() }
+}
+
+private fun pairingErrorString(failure: PairingFailure): Int = when (failure) {
+    PairingFailure.WRONG_CODE -> R.string.pairing_wrong_code
+    PairingFailure.UNREACHABLE -> R.string.pairing_unreachable
+    PairingFailure.TLS_FAILED -> R.string.pairing_tls_failed
+    PairingFailure.TIMEOUT -> R.string.pairing_timeout
+    PairingFailure.UNKNOWN -> R.string.pairing_unknown
 }
 
 @Composable

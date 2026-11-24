@@ -5,6 +5,7 @@ import java.time.LocalDate
 import java.time.ZoneId
 import tv.cleanyour.core.backup.RestoreBundleWriter
 import tv.cleanyour.core.discovery.Discovery
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
 import tv.cleanyour.core.engine.Engine
@@ -134,6 +135,10 @@ class ManageDeps(
     val restarts: Restarts = Restarts(documents),
     // RFC-REACH-1: how the phone is connected, for "Copy connection details" (the app reads ConnectivityManager).
     val phoneNetwork: PhoneNetwork = PhoneNetwork { PhoneNetworkFacts.UNKNOWN },
+    // 0.2: casting (DIAL app launch); null keeps the Cast section out of App settings.
+    val cast: CastClient? = null,
+    // 0.2: user profiles (ProfileStore over the same documents); App settings reads and writes it.
+    val userProfiles: ProfileStore = ProfileStore(documents),
 ) {
     fun tv(id: TvId): Tv? = tvs.tvs.value.firstOrNull { it.id == id }
 
@@ -289,18 +294,26 @@ class HomePrefs(private val store: DocumentStore) {
 
 // App settings (M8) that are preferences, not records: haptics and large text. look2: the Look
 // editor's Show launcher names ("lookKeyNames=", Advanced), off unless turned on.
-data class AppPrefsValue(val haptics: Boolean = true, val largeTextFollowsSystem: Boolean = true, val lookKeyNames: Boolean = false)
+data class AppPrefsValue(val haptics: Boolean = true, val largeTextFollowsSystem: Boolean = true, val lookKeyNames: Boolean = false,
+    val uiStyle: UiStyle = UiStyle.CLASSIC)
 
 class AppPrefs(private val store: DocumentStore) {
     private val path = "settings.txt"
 
+    // The live interface choice, so a change in App settings applies at once instead of on
+    // the next launch. Seeded by load(); save() moves it too.
+    private val mutableUiStyle = kotlinx.coroutines.flow.MutableStateFlow(UiStyle.CLASSIC)
+    val uiStyle: kotlinx.coroutines.flow.StateFlow<UiStyle> = mutableUiStyle.asStateFlow()
+
     suspend fun load(): AppPrefsValue = store.read(path) { bytes ->
         val map = bytes.decodeToString().lines().filter { '=' in it }.associate { it.substringBefore('=') to it.substringAfter('=') }
-        AppPrefsValue(haptics = map["haptics"] != "false", largeTextFollowsSystem = map["largeText"] != "false", lookKeyNames = map["lookKeyNames"] == "true")
-    } ?: AppPrefsValue()
+        AppPrefsValue(haptics = map["haptics"] != "false", largeTextFollowsSystem = map["largeText"] != "false", lookKeyNames = map["lookKeyNames"] == "true",
+            uiStyle = runCatching { UiStyle.valueOf(map["uiStyle"] ?: "CLASSIC") }.getOrDefault(UiStyle.CLASSIC))
+    }?.also { mutableUiStyle.value = it.uiStyle } ?: AppPrefsValue()
 
     suspend fun save(v: AppPrefsValue) {
-        store.write(path, ("haptics=${v.haptics}\nlargeText=${v.largeTextFollowsSystem}\n" + if (v.lookKeyNames) "lookKeyNames=true\n" else "").encodeToByteArray())
+        mutableUiStyle.value = v.uiStyle
+        store.write(path, ("haptics=${v.haptics}\nlargeText=${v.largeTextFollowsSystem}\nuiStyle=${v.uiStyle.name}\n" + if (v.lookKeyNames) "lookKeyNames=true\n" else "").encodeToByteArray())
     }
 }
 

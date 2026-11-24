@@ -71,6 +71,12 @@ object ProbeScripts {
     val NOOP_CLEANUP = ShellLine("rm -f ${RemoteDir.TMP.path}/$NOOP_FILE")
     val PS_ARGS = ShellLine("ps -A -o ARGS")
 
+    // The Gemini button: KEYCODE_ASSIST (219) is the remote's Assistant button — it opens the
+    // Assistant / Gemini overlay on the TV screen. The `am start` line is the fallback for a TV
+    // that ignores the keyevent (its command fails). Both are fixed constants, no arguments.
+    val GEMINI_ASSIST_KEY = ShellLine("input keyevent KEYCODE_ASSIST")
+    val GEMINI_ASSIST_INTENT = ShellLine("am start -a android.intent.action.ASSIST")
+
     // Launcher v2.4.0's guard (tools/disable.sh): who saved each Wi-Fi network. Only fixed words leave
     // the TV (SavedWifi): the cname= owners, WifiConfigManager's list markers and "ID: <n> SSID" per
     // saved network, the match ending before the network's name.
@@ -121,6 +127,6 @@ object ProbeScripts {
         "HOME_RESOLVED" to HOME_RESOLVED, "LAUNCHABLE" to LAUNCHABLE, "INPUTS" to INPUTS, "SETTINGS" to SETTINGS, "HOME_FOCUS" to HOME_FOCUS, "BOOT_ID" to BOOT_ID,
         "FREE_DATA" to FREE_DATA, "SCREENSHOT" to SCREENSHOT, "SCREENSHOT_CLEANUP" to SCREENSHOT_CLEANUP, "MKDIR_TMP" to MKDIR_TMP,
         "NOOP_INSTALL" to NOOP_INSTALL, "NOOP_UNINSTALL" to NOOP_UNINSTALL, "NOOP_CLEANUP" to NOOP_CLEANUP, "PS_ARGS" to PS_ARGS,
-        "WIFI_OWNERS" to WIFI_OWNERS,
+        "WIFI_OWNERS" to WIFI_OWNERS, "GEMINI_ASSIST_KEY" to GEMINI_ASSIST_KEY, "GEMINI_ASSIST_INTENT" to GEMINI_ASSIST_INTENT,
     )
 }

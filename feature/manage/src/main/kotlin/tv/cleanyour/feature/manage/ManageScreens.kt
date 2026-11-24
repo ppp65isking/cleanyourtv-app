@@ -2,6 +2,9 @@
 
 package tv.cleanyour.feature.manage
 
+import android.content.Context
+import android.content.Intent
+import android.provider.Settings
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,6 +22,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -33,6 +37,11 @@ import tv.cleanyour.core.engine.PauseReason
 import tv.cleanyour.core.flows.AppConfirm
 import tv.cleanyour.core.flows.AppSettingsIntent
 import tv.cleanyour.core.flows.AppSettingsState
+import tv.cleanyour.core.flows.CastApp
+import tv.cleanyour.core.flows.CastResult
+import tv.cleanyour.core.flows.CastTv
+import tv.cleanyour.core.flows.UiStyle
+import tv.cleanyour.core.flows.UserProfile
 import tv.cleanyour.core.flows.LeftoversIntent
 import tv.cleanyour.core.flows.LeftoversState
 import tv.cleanyour.core.flows.ManageIntent
@@ -480,6 +489,8 @@ fun AppSettingsScreen(state: AppSettingsState, onIntent: (AppSettingsIntent) -> 
     var licences by rememberSaveable { mutableStateOf(false) }
     var connection by rememberSaveable { mutableStateOf(false) }
     var privacy by rememberSaveable { mutableStateOf(false) }
+    var newProfile by rememberSaveable { mutableStateOf(false) }
+    val context = LocalContext.current
     ScreenScaffold(Glow.Tv, modifier, topBar = { CytTopBar(onBack = onBack) }) {
         ScreenTitle(stringResource(R.string.appsettings_title), titleTop)
         ListGroup(Modifier.padding(top = 20.dp)) {
@@ -489,6 +500,18 @@ fun AppSettingsScreen(state: AppSettingsState, onIntent: (AppSettingsIntent) -> 
             SwitchRow(stringResource(R.string.appsettings_haptics), state.prefs.haptics, { onIntent(AppSettingsIntent.SetHaptics(it)) },
                 subtitle = stringResource(R.string.appsettings_haptics_note))
         }
+        // 0.2: the choosable interface. The choice applies at once (AppPrefs.uiStyle is a
+        // live flow MainActivity collects) and is kept in settings.txt.
+        SectionLabel(stringResource(R.string.appsettings_interface))
+        ChoiceList(
+            options = listOf(
+                ChoiceOption(UiStyle.CLASSIC.name, stringResource(R.string.appsettings_interface_classic), stringResource(R.string.appsettings_interface_classic_note), icon = null),
+                ChoiceOption(UiStyle.LIQUID_GLASS.name, stringResource(R.string.appsettings_interface_liquid), stringResource(R.string.appsettings_interface_liquid_note), icon = null),
+            ),
+            selectedKey = state.prefs.uiStyle.name,
+            onSelect = { onIntent(AppSettingsIntent.SetUiStyle(UiStyle.valueOf(it.key))) },
+            modifier = Modifier.padding(top = 12.dp),
+        )
         SectionLabel(stringResource(R.string.appsettings_about))
         ListGroup {
             ListRow(msg(R.string.appsettings_version, "version" to state.version))
@@ -519,6 +542,49 @@ fun AppSettingsScreen(state: AppSettingsState, onIntent: (AppSettingsIntent) -> 
                     onClick = { if (update is UpdateCheck.Available) onOpenRelease() else onIntent(AppSettingsIntent.CheckUpdates) })
             }
         }
+        // 0.2 Profiles: switch between saved setups. Creating one is a sheet with a name, an
+        // optional TV and an optional style; switching applies the style and opens the TV.
+        SectionLabel(stringResource(R.string.appsettings_profiles))
+        if (state.profiles.isNotEmpty()) {
+            ChoiceList(
+                options = state.profiles.map { p -> ChoiceOption(p.id, p.name, profileSubtitle(p), icon = null) },
+                selectedKey = state.activeProfileId,
+                onSelect = { onIntent(AppSettingsIntent.SwitchProfile(it.key)) },
+                modifier = Modifier.padding(top = 12.dp),
+            )
+        }
+        ListGroup(Modifier.padding(top = 12.dp)) {
+            ListRow(stringResource(R.string.appsettings_profile_add), onClick = { newProfile = true })
+            if (state.activeProfileId != null) {
+                ListDivider()
+                ListRow(stringResource(R.string.appsettings_profile_delete),
+                    onClick = { onIntent(AppSettingsIntent.DeleteProfile(state.activeProfileId!!)) })
+            }
+        }
+        // 0.2 Cast: open an app on a saved TV over DIAL, or hand screen casting to Android's
+        // own Cast settings. The note says what this app cannot do, so nobody expects it to
+        // be a Cast receiver.
+        SectionLabel(stringResource(R.string.appsettings_cast))
+        ListGroup {
+            state.castTvs.forEachIndexed { i, tv ->
+                if (i > 0) ListDivider()
+                ListRow(stringResource(R.string.appsettings_cast_youtube), subtitle = tv.name,
+                    trailing = if (state.castBusy == tv.id) ({ Spinner() }) else null,
+                    onClick = { if (state.castBusy == null) onIntent(AppSettingsIntent.CastLaunch(tv.id, CastApp.YOUTUBE)) })
+            }
+            if (state.castTvs.isNotEmpty()) ListDivider()
+            ListRow(stringResource(R.string.appsettings_cast_screen), subtitle = stringResource(R.string.appsettings_cast_screen_note),
+                onClick = { openCastSettings(context) })
+            state.castResult?.let { result ->
+                ListDivider()
+                ListRow(stringResource(when (result) {
+                    CastResult.OPENED -> R.string.appsettings_cast_opened
+                    CastResult.FAILED -> R.string.appsettings_cast_failed
+                }), subtitle = state.castResultName)
+            }
+            ListDivider()
+            ListRow(stringResource(R.string.appsettings_cast_note))
+        }
         ListGroup(Modifier.padding(top = 12.dp)) {
             ListRow(stringResource(R.string.appsettings_licences), onClick = { licences = true })
             ListDivider()
@@ -541,9 +607,64 @@ fun AppSettingsScreen(state: AppSettingsState, onIntent: (AppSettingsIntent) -> 
     if (licences) CytBottomSheet({ licences = false }) { LicencesContent() }
     if (privacy) CytBottomSheet({ privacy = false }) { PrivacyContent(online = state.updateCheck || state.addOns) }
     if (connection) CytBottomSheet({ connection = false }) { DetailsContent(details, onDetails) }
+    if (newProfile) CytBottomSheet({ newProfile = false }) {
+        NewProfileContent(state.castTvs, onCreate = { name, tv, style ->
+            onIntent(AppSettingsIntent.CreateProfile(name, tv?.id, tv?.name, style))
+            newProfile = false
+        })
+    }
     state.confirm?.let { what ->
         CytBottomSheet({ onIntent(AppSettingsIntent.CancelConfirm) }) { ConfirmContent(what, state.working, onIntent) }
     }
+}
+
+// 0.2 Cast: screen casting belongs to Android, so the row opens the system's Cast settings
+// (the phone's own Cast picker), not a screen of this app's.
+private fun openCastSettings(context: Context) {
+    runCatching {
+        context.startActivity(Intent(Settings.ACTION_CAST_SETTINGS).apply { flags = Intent.FLAG_ACTIVITY_NEW_TASK })
+    }
+}
+
+// 0.2 Profiles: the subtitle of a profile row — its TV and its style, when it has them.
+@Composable
+private fun profileSubtitle(p: UserProfile): String? {
+    val style = when (p.uiStyle) {
+        UiStyle.CLASSIC -> stringResource(R.string.appsettings_interface_classic)
+        UiStyle.LIQUID_GLASS -> stringResource(R.string.appsettings_interface_liquid)
+        null -> null
+    }
+    return listOfNotNull(p.tvName, style).joinToString(" · ").takeIf { it.isNotEmpty() }
+}
+
+// 0.2 Profiles: the new-profile sheet — a name, an optional TV from the saved ones, an
+// optional style. Creating switches to the new profile.
+@Composable
+private fun ColumnScope.NewProfileContent(castTvs: List<CastTv>, onCreate: (String, CastTv?, UiStyle?) -> Unit) {
+    var name by rememberSaveable { mutableStateOf("") }
+    var tvKey by rememberSaveable { mutableStateOf("") }
+    var styleKey by rememberSaveable { mutableStateOf("") }
+    SheetHeader(stringResource(R.string.appsettings_profile_new))
+    CytTextField(value = name, onValueChange = { name = it.take(40) }, label = stringResource(R.string.appsettings_profile_name),
+        supporting = stringResource(R.string.appsettings_profile_name_hint), modifier = Modifier.padding(top = 16.dp))
+    SectionLabel(stringResource(R.string.appsettings_profile_tv))
+    ChoiceList(
+        options = listOf(ChoiceOption("", stringResource(R.string.appsettings_profile_no_tv), icon = null)) +
+            castTvs.map { ChoiceOption(it.id.value, it.name, icon = null) },
+        selectedKey = tvKey, onSelect = { tvKey = it.key }, modifier = Modifier.padding(top = 8.dp),
+    )
+    SectionLabel(stringResource(R.string.appsettings_profile_style))
+    ChoiceList(
+        options = listOf(
+            ChoiceOption("", stringResource(R.string.appsettings_profile_keep_style), icon = null),
+            ChoiceOption(UiStyle.CLASSIC.name, stringResource(R.string.appsettings_interface_classic), icon = null),
+            ChoiceOption(UiStyle.LIQUID_GLASS.name, stringResource(R.string.appsettings_interface_liquid), icon = null),
+        ),
+        selectedKey = styleKey, onSelect = { styleKey = it.key }, modifier = Modifier.padding(top = 8.dp),
+    )
+    PrimaryButton(stringResource(R.string.appsettings_profile_create), {
+        onCreate(name.trim(), castTvs.firstOrNull { it.id.value == tvKey }, styleKey.takeIf { it.isNotEmpty() }?.let { UiStyle.valueOf(it) })
+    }, Modifier.padding(top = 20.dp, bottom = 24.dp), enabled = name.isNotBlank())
 }
 
 @Composable

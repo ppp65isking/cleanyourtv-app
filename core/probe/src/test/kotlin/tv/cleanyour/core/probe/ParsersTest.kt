@@ -32,6 +32,7 @@ class ParsersTest {
         // Printable ASCII only, and no write verb outside the lines that must write (all of them in
         // the app's TMP folder, or the no-op package).
         val writers = setOf("SCREENSHOT", "SCREENSHOT_CLEANUP", "MKDIR_TMP", "NOOP_INSTALL", "NOOP_UNINSTALL", "NOOP_CLEANUP",
+            "GEMINI_ASSIST_KEY", "GEMINI_ASSIST_INTENT",
             "copyApk(com.gathin.tvhome, signer-0123456789abcdef.apk, 16777216)", "signerCleanup(signer-0123456789abcdef.apk)")
         for ((k, v) in actual) {
             assertTrue(v.all { it in ' '..'~' }, k)

@@ -1,6 +1,11 @@
 package tv.cleanyour.ui.design.theme
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
@@ -98,6 +103,36 @@ fun Modifier.glass(shape: Shape, style: GlassStyle): Modifier = drawWithCache {
     onDrawBehind { drawGlass(g) }
 }
 
+// Liquid glass (0.2): the design system's glass with a slow specular sheen drifting across the
+// surface, so a glass card reads as liquid rather than static frosted glass. The sheen is a
+// diagonal white gradient whose band travels left to right and back over seven seconds; the
+// state read inside the draw lambda re-draws it as it moves, with no recomposition. Under
+// reduced motion the sheen sits still at the centre. CLASSIC never calls this; it is opt-in
+// per surface, and only the top bar and the secondary buttons use it.
+@Composable
+fun Modifier.liquidGlass(shape: Shape, style: GlassStyle = CytTheme.glass): Modifier {
+    val reduced = LocalReducedMotion.current
+    val shift by if (reduced) remember { mutableStateOf(0.5f) } else {
+        val transition = rememberInfiniteTransition(label = "liquid sheen")
+        transition.animateFloat(0f, 1f,
+            infiniteRepeatable(tween(7000, easing = LinearEasing), RepeatMode.Reverse), label = "sheen")
+    }
+    return this.glass(shape, style).drawWithCache {
+        onDrawWithContent {
+            drawContent()
+            val w = size.width
+            val sheen = Brush.linearGradient(
+                0f to Color.White.copy(alpha = 0f),
+                0.5f to Color.White.copy(alpha = 0.08f),
+                1f to Color.White.copy(alpha = 0f),
+                start = Offset(w * (shift - 0.4f), 0f),
+                end = Offset(w * (shift + 0.4f), size.height),
+            )
+            drawRect(sheen)
+        }
+    }
+}
+
 // DESIGN-SYSTEM 5.2 as drawn in the approved mockups: one radial gradient on the window
 // background, centre (32% x, 26% y, capped for tall content), core alpha 24% (light 14%), 10% at
 // about half the radius, transparent at the edge. `alpha` is read in the draw lambda, so the
@@ -144,9 +179,10 @@ internal fun Glow.colors(c: CytColors): Pair<Color, Color>? = when (this) {
 }
 
 // The glow with the launcher's dip on a context change: alpha to 35% in 200 ms, swap, back to
-// 100% in 500 ms. Static otherwise. Under reduced motion the colour swaps at once.
+// 100% in 500 ms. Static otherwise. Under reduced motion the colour swaps at once. `boost`
+// (0.2, liquid glass) lifts the core and mid alphas, so the glow reads stronger on the glass.
 @Composable
-fun Modifier.animatedAmbientGlow(glow: Glow): Modifier {
+fun Modifier.animatedAmbientGlow(glow: Glow, boost: Float = 1f): Modifier {
     val c = CytTheme.colors
     val reduced = LocalReducedMotion.current
     var shown by remember { mutableStateOf(glow) }
@@ -163,7 +199,7 @@ fun Modifier.animatedAmbientGlow(glow: Glow): Modifier {
         }
     }
     val pair = shown.colors(c) ?: return this
-    val core = if (shown == Glow.Done) c.glowCoreAlpha * 0.75f else c.glowCoreAlpha
-    val mid = if (shown == Glow.Done) c.glowMidAlpha * 1.2f else c.glowMidAlpha
+    val core = (if (shown == Glow.Done) c.glowCoreAlpha * 0.75f else c.glowCoreAlpha) * boost
+    val mid = (if (shown == Glow.Done) c.glowMidAlpha * 1.2f else c.glowMidAlpha) * boost
     return this.ambientGlow(pair.first, pair.second, core, mid) { alpha.value }
 }
