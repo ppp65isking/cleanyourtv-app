@@ -195,6 +195,32 @@
 
     <!-- M8 App settings -->
     <string name="appsettings_title">App settings</string>
+    <!-- 0.2 Profiles. -->
+    <string name="appsettings_profiles">Profiles</string>
+    <string name="appsettings_profile_add">Add a profile</string>
+    <string name="appsettings_profile_delete">Delete this profile</string>
+    <string name="appsettings_profile_new">New profile</string>
+    <string name="appsettings_profile_name">Profile name</string>
+    <string name="appsettings_profile_name_hint">A name for this setup, e.g. Living room</string>
+    <string name="appsettings_profile_tv">TV</string>
+    <string name="appsettings_profile_no_tv">No TV</string>
+    <string name="appsettings_profile_style">Interface</string>
+    <string name="appsettings_profile_keep_style">Keep the current style</string>
+    <string name="appsettings_profile_create">Create profile</string>
+    <!-- 0.2 Interface. -->
+    <string name="appsettings_interface">Interface</string>
+    <string name="appsettings_interface_classic">Classic</string>
+    <string name="appsettings_interface_classic_note">The black-and-glass look this app shipped with</string>
+    <string name="appsettings_interface_liquid">Liquid glass</string>
+    <string name="appsettings_interface_liquid_note">Frosted glass with a slow sheen, a stronger glow and a glass top bar</string>
+    <!-- 0.2 Cast. -->
+    <string name="appsettings_cast">Cast</string>
+    <string name="appsettings_cast_youtube">Open YouTube on the TV</string>
+    <string name="appsettings_cast_screen">Cast my screen</string>
+    <string name="appsettings_cast_screen_note">Opens Android\'s Cast settings — the TV\'s own Cast receiver does the mirroring</string>
+    <string name="appsettings_cast_opened">YouTube opened on the TV</string>
+    <string name="appsettings_cast_failed">Couldn\'t open it on the TV</string>
+    <string name="appsettings_cast_note">This app can\'t be a Cast receiver: opening an app on the TV works over DIAL, and screen casting uses Android\'s own Cast. A TV that isn\'t a Cast TV won\'t answer.</string>
     <string name="appsettings_large_text">Large text follows system</string>
     <string name="appsettings_large_text_note">Text size follows the size set in your phone\'s Settings.</string>
     <string name="appsettings_haptics">Haptics</string>

@@ -54,12 +54,23 @@ object CytIcons {
     val Grip: ImageVector by lazy { icon("Grip", dot(9f, 6.5f), dot(15f, 6.5f), dot(9f, 12f), dot(15f, 12f), dot(9f, 17.5f), dot(15f, 17.5f), width = 2f) }
     val Circle: ImageVector by lazy { icon("Circle", "M12 6a6 6 0 1 1 0 12a6 6 0 1 1 0-12z") }
     val Dash: ImageVector by lazy { icon("Dash", "M8 12h8", width = 2f) }
+    // 0.2: the Gemini sparkle (a four-point star with a small second one), for the top-bar
+    // Gemini button. Outline strokes like the rest of the set.
+    val Sparkle: ImageVector by lazy { icon("Sparkle",
+        "M11 3.5l1.6 6.1 6.1 1.6-6.1 1.6L11 18.9l-1.6-6.1-6.1-1.6 6.1-1.6z",
+        "M18.5 15.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z") }
+    // The real Gemini logo: the four-pointed star with curved sides, filled — a logo, not an
+    // outline stroke, so it reads as the Gemini mark rather than a generic sparkle. Path is
+    // Simple Icons' "Google Gemini" (CC0 1.0), 24 grid; the button tints it with the accent.
+    val Gemini: ImageVector by lazy { filledIcon("Gemini",
+        "M11.04 19.32Q12 21.51 12 24q0-2.49.93-4.68q.96-2.19 2.58-3.81t3.81-2.55Q21.51 12 24 12q-2.49 0-4.68-.93a12.3 12.3 0 0 1-3.81-2.58a12.3 12.3 0 0 1-2.58-3.81Q12 2.49 12 0q0 2.49-.96 4.68q-.93 2.19-2.55 3.81a12.3 12.3 0 0 1-3.81 2.58Q2.49 12 0 12q2.49 0 4.68.96q2.19.93 3.81 2.55t2.55 3.81") }
 
     val all: List<ImageVector>
         get() = listOf(
             Back, Close, Help, Check, ChevronForward, ChevronDown, ChevronUp, Info, Warning, Stopped, Shield,
             Wifi, WifiOff, Tv, Minus, Plus, Refresh, Copy, Settings, ArrowUp, ArrowDown, Search, Cards, Home,
             Undo, Restart, Key, Download, Phone, Delete, Share, Edit, Lock, External, Reorder, Grip, Circle, Dash,
+            Sparkle, Gemini,
         )
 
     private fun icon(name: String, vararg paths: String, width: Float = 1.5f, mirror: Boolean = false): ImageVector {
@@ -72,6 +83,18 @@ object CytIcons {
                 strokeLineWidth = width,
                 strokeLineCap = StrokeCap.Round,
                 strokeLineJoin = StrokeJoin.Round,
+            )
+        }
+        return b.build()
+    }
+
+    // A filled mark (a logo), not an outline stroke: the path's own fill, tinted by Icon().
+    private fun filledIcon(name: String, vararg paths: String): ImageVector {
+        val b = ImageVector.Builder(name = name, defaultWidth = 24.dp, defaultHeight = 24.dp, viewportWidth = 24f, viewportHeight = 24f)
+        for (d in paths) {
+            b.addPath(
+                pathData = PathParser().parsePathString(d).toNodes(),
+                fill = SolidColor(Color.Black),
             )
         }
         return b.build()

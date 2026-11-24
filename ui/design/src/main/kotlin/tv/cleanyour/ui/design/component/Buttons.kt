@@ -46,10 +46,12 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
+import tv.cleanyour.core.flows.UiStyle
 import tv.cleanyour.ui.design.R
 import tv.cleanyour.ui.design.theme.CytMotion
 import tv.cleanyour.ui.design.theme.CytTheme
 import tv.cleanyour.ui.design.theme.glass
+import tv.cleanyour.ui.design.theme.liquidGlass
 import tv.cleanyour.ui.design.theme.pressScale
 
 // DESIGN-SYSTEM 8.1. All pills are full width inside the gutter unless the caller says otherwise,
@@ -157,8 +159,11 @@ fun SecondaryButton(text: String, onClick: () -> Unit, modifier: Modifier = Modi
     Guarded(modifier, guardObscured) { outer, guard ->
         val c = CytTheme.colors
         val source = remember { MutableInteractionSource() }
+        // 0.2: liquid glass gets the moving sheen; CLASSIC keeps the static glass of 0.1.
+        val surface = if (CytTheme.uiStyle == UiStyle.LIQUID_GLASS) outer.pressScale(source).liquidGlass(CytTheme.shapes.pill)
+            else outer.pressScale(source).glass(CytTheme.shapes.pill, CytTheme.glass)
         PillBase(
-            modifier = outer.pressScale(source).glass(CytTheme.shapes.pill, CytTheme.glass).clip(CytTheme.shapes.pill),
+            modifier = surface.clip(CytTheme.shapes.pill),
             onClick = onClick, enabled = enabled, source = source, stateDescription = null, guard = guard,
         ) { PillLabel(text, if (enabled) c.textPrimary else c.textTertiary) }
     }

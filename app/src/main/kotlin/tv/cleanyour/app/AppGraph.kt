@@ -113,7 +113,14 @@ class AppGraph(context: Context, val appVersion: String = versionOf(context), va
     // W2: the phone's ADB key and the sessions (RFC-W2-3; plain TCP, no TLS in 0.1).
     val signer = DeferredAdbSigner(workScope) { KeystoreAdbSigner.create(app) }
     val keyInfo = SignerKeyInfo(signer)
-    val sessions = AdbSessionManager(PlainSocketFactory(), signer, tls = null, clock = clock, scope = workScope, log = { CytLog.i(it) })
+    // 0.2: the STLS upgrader the session calls when a TV sends STLS, so a paired TV whose
+    // wireless debugging is on can be connected over TLS; plain-5555 TVs never reach it.
+    val tlsUpgrader = tv.cleanyour.android.platform.AdbTlsUpgrader {
+        (signer.get() as? KeystoreAdbSigner)?.tlsIdentity()
+            ?: throw IllegalStateException("the phone's ADB key is not a Keystore key")
+    }
+    val sessions = AdbSessionManager(PlainSocketFactory(), signer, tls = tlsUpgrader, clock = clock, scope = workScope, log = { CytLog.i(it) })
+    val pairing = AppPairingRunner(signer, log = { CytLog.w(it) })
 
     // W4: the probe and the bundled tables.
     // An installed APK that hashes to a pinned one has that pin's signer, so it is not copied to read it
@@ -212,6 +219,7 @@ class AppGraph(context: Context, val appVersion: String = versionOf(context), va
         documents = documents,     // 0.4.0: the person's photo for the look step (OwnPicture)
         wrongFocus = { tvId -> wrongFocus.remove(tvId) },                 // issue #629
         restarts = restarts,       // 0.4.8
+        pairing = pairing,         // 0.2: in-app pairing from the PairingNeeded screen
     )
 
     val manageDeps = ManageDeps(
@@ -229,6 +237,7 @@ class AppGraph(context: Context, val appVersion: String = versionOf(context), va
         log = FlowLog { CytLog.i(it) },                 // 0.4.7: Manage's re-check lines (StockHomeBack)
         restarts = restarts,                            // 0.4.8: the restart count (Restarts)
         phoneNetwork = AndroidPhoneNetwork(app),        // RFC-REACH-1: "Copy connection details"
+        cast = AndroidCastClient(),   // 0.2: DIAL app launch in App settings
     )
 
     init {

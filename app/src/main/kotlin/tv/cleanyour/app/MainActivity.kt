@@ -10,6 +10,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -35,10 +36,14 @@ class MainActivity : ComponentActivity() {
         setContent {
             // D-W8-27: 0.1 is always the dark, black-and-glass design (mockups, DESIGN-SYSTEM 2),
             // whatever the phone's own mode. The light tokens stay in :ui:design, unused.
-            CytTheme(darkTheme = true) {
+            // 0.2: the interface style is the saved choice, live: changing it in App settings
+            // re-themes the app at once through AppPrefs.uiStyle.
+            val uiStyle by graph.appPrefs.uiStyle.collectAsState()
+            CytTheme(darkTheme = true, uiStyle = uiStyle) {
                 var start by remember { mutableStateOf<Dest?>(null) }
                 LaunchedEffect(Unit) {
                     graph.tvs.load()
+                    graph.appPrefs.load()
                     start = startKey(resolveStart(graph.tvs.tvs.value, graph.seams.journal))
                 }
                 val s = start

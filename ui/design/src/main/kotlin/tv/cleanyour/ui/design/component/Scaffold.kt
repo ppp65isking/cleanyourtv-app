@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithCache
@@ -27,31 +28,58 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
+import tv.cleanyour.core.flows.UiStyle
 import tv.cleanyour.ui.design.R
 import tv.cleanyour.ui.design.icon.CytIcons
 import tv.cleanyour.ui.design.theme.CytSpacing
 import tv.cleanyour.ui.design.theme.CytTheme
 import tv.cleanyour.ui.design.theme.Glow
 import tv.cleanyour.ui.design.theme.animatedAmbientGlow
+import tv.cleanyour.ui.design.theme.liquidGlass
 
 // The top bar: 56 dp (taller only when the centre needs it at large font sizes), a 48 dp back
 // button at the start (or an empty slot), the centre (the TV status chip or the step counter)
-// and an optional trailing 48 dp action.
+// and an optional trailing 48 dp action. In LIQUID_GLASS the bar itself is a glass pill with
+// the moving sheen; CLASSIC keeps the bare row, as 0.1 had it.
+// 0.2: the trailing slot is the Gemini button unless the screen supplies its own trailing
+// action (none does today): the Gemini star, which fires Gemini on the connected TV screen
+// (KEYCODE_ASSIST, via LocalGeminiOnTv) and falls back to opening Gemini on the phone
+// (openGemini) when no TV is connected, so talking to Gemini is one tap from every screen.
+// Pass gemini = false to leave the slot empty.
 @Composable
 fun CytTopBar(
     modifier: Modifier = Modifier,
     onBack: (() -> Unit)? = null,
     center: (@Composable () -> Unit)? = null,
     trailing: (@Composable () -> Unit)? = null,
+    gemini: Boolean = true,
 ) {
-    Row(modifier.fillMaxWidth().heightIn(min = CytSpacing.topBarHeight).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+    val bar = if (CytTheme.uiStyle == UiStyle.LIQUID_GLASS) modifier.liquidGlass(CytTheme.shapes.pill) else modifier
+    Row(bar.fillMaxWidth().heightIn(min = CytSpacing.topBarHeight).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
             if (onBack != null) CytIconButton(CytIcons.Back, stringResource(R.string.cyt_back), onBack)
         }
         Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { center?.invoke() }
-        Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) { trailing?.invoke() }
+        Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+            when {
+                trailing != null -> trailing()
+                gemini -> {
+                    val context = LocalContext.current
+                    val scope = rememberCoroutineScope()
+                    val geminiOnTv = LocalGeminiOnTv.current
+                    CytIconButton(CytIcons.Gemini, stringResource(R.string.cyt_gemini), {
+                        scope.launch {
+                            val onTv = geminiOnTv?.invoke() == true
+                            if (!onTv) openGemini(context)
+                        }
+                    }, tint = CytTheme.colors.accent)
+                }
+            }
+        }
     }
 }
 
@@ -72,7 +100,9 @@ fun ScreenScaffold(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val c = CytTheme.colors
-    BoxWithConstraints(modifier.fillMaxSize().background(c.bg).animatedAmbientGlow(glow)) {
+    // 0.2: liquid glass lifts the ambient glow; CLASSIC keeps the 0.1 glow exactly.
+    val glowBoost = if (CytTheme.uiStyle == UiStyle.LIQUID_GLASS) 1.5f else 1f
+    BoxWithConstraints(modifier.fillMaxSize().background(c.bg).animatedAmbientGlow(glow, glowBoost)) {
         val gutter = CytSpacing.gutterFor(maxWidth)
         Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
             topBar()

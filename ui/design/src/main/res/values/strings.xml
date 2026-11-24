@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools">
     <string name="cyt_back">Back</string>
+    <string name="cyt_gemini">Talk to Gemini</string>
     <string name="cyt_close">Close</string>
     <string name="cyt_help">Help</string>
     <string name="cyt_step_counter">%1$d of %2$d</string>
